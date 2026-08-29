@@ -1,0 +1,67 @@
+// mayhem/kat_export.go.src — known-answer harness for kubevirt's DNS resolv.conf
+// parser, exported so the dynamically-linked KAT probe (mayhem/kat) can assert
+// exact behavioral values. Staged by mayhem/build.sh into the
+// _mayhem_harness/dns mini-module alongside the verbatim copy of
+// pkg/network/dns/resolveconf.go, so it reaches the REAL ParseNameservers /
+// ParseSearchDomains / DomainNameWithSubdomain code path — the same path the
+// fuzz harness exercises.
+//
+// This is the BEHAVIORAL oracle's engine. Every expected value below is lifted
+// directly from kubevirt's own pkg/network/dns/resolveconf_test.go:
+//   - "nameserver 8.8.8.8 / 8.8.4.4"        -> IPv4 == [8.8.8.8, 8.8.4.4]
+//   - ""                                    -> IPv4 defaults to [8.8.8.8]
+//   - "nameserver 2001:db8::1 / ::1"        -> 2 IPv6 nameservers
+//   - "search cluster.local svc.cluster.local example.com" -> those 3 domains
+//   - "search LoCaL"                        -> ["local"] (lower-cased)
+//   - DomainNameWithSubdomain(..., "subdomain") -> "subdomain.default.svc.cluster.local"
+// When the program is neutered (LD_PRELOAD _exit(0)) the probe prints nothing,
+// every assertion in test.sh misses, and the oracle FAILS — which is the point.
+package dns
+
+import (
+	"net"
+	"strings"
+)
+
+// KAT holds the known-answer results computed through the real resolveconf code.
+type KAT struct {
+	NS4         string // IPv4 nameservers of a two-entry resolv.conf, joined by ","
+	NS4Default  string // IPv4 nameservers when none are supplied (the default)
+	NS6Count    int    // number of IPv6 nameservers parsed
+	Search      string // parsed search domains, joined by ","
+	SearchLower string // a single mixed-case search domain, lower-cased
+	Subdomain   string // DomainNameWithSubdomain result for a known input
+}
+
+func ipStrings(ips [][]byte) []string {
+	out := make([]string, 0, len(ips))
+	for _, b := range ips {
+		out = append(out, net.IP(b).String())
+	}
+	return out
+}
+
+// KATRun computes the oracle values through the real resolveconf implementation.
+func KATRun() KAT {
+	out := KAT{}
+
+	if ns, err := ParseNameservers("nameserver 8.8.8.8\nnameserver 8.8.4.4\n"); err == nil && ns != nil {
+		out.NS4 = strings.Join(ipStrings(ns.IPv4), ",")
+	}
+	if ns, err := ParseNameservers(""); err == nil && ns != nil {
+		out.NS4Default = strings.Join(ipStrings(ns.IPv4), ",")
+	}
+	if ns, err := ParseNameservers("nameserver 2001:db8::1\nnameserver ::1\n"); err == nil && ns != nil {
+		out.NS6Count = len(ns.IPv6)
+	}
+	if sd, err := ParseSearchDomains("search cluster.local svc.cluster.local example.com\n"); err == nil {
+		out.Search = strings.Join(sd, ",")
+	}
+	if sd, err := ParseSearchDomains("search LoCaL\n"); err == nil {
+		out.SearchLower = strings.Join(sd, ",")
+	}
+	out.Subdomain = DomainNameWithSubdomain(
+		[]string{"default.svc.cluster.local", "svc.cluster.local", "cluster.local"}, "subdomain")
+
+	return out
+}

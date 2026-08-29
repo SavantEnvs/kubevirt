@@ -1,0 +1,59 @@
+// mayhem/harness_resolveconf.go.src — native testing.F harness for kubevirt's
+// DNS resolv.conf parser (pkg/network/dns/resolveconf.go). Staged by
+// mayhem/build.sh into a fresh STANDALONE Go mini-module (_mayhem_harness/dns)
+// that holds a verbatim copy of pkg/network/dns/resolveconf.go (with its ONE
+// non-stdlib import — kubevirt.io/client-go/log — repointed to a tiny local
+// no-op shim), so go-118-fuzz-build builds the REAL ParseNameservers /
+// ParseSearchDomains / domain-helper code WITHOUT dragging in kubevirt's giant
+// Kubernetes go.mod closure (client-go + api-machinery + controller-runtime).
+//
+// Declared `package dns` (the directory's package) so it reaches the real
+// exported functions directly — go-118-fuzz-build rewrites this into an ordinary
+// non-test .go file, so the package MUST match the directory's internal package
+// (netnew §6 Go).
+//
+// Byte-in, NO file I/O (netnew §3): the fuzzer's bytes ARE the resolv.conf
+// content string — the same string the real GetResolvConfDetailsFromPod would
+// pass in after reading /etc/resolv.conf, but here supplied entirely by the
+// fuzzer. Starter seeds are Mayhem's job via the Mayhemfile testsuite: directive.
+// The parse+helper surface must never panic on any input, well-formed or not.
+package dns
+
+import "testing"
+
+// FuzzResolveConf drives the whole resolv.conf parse + DNS domain-helper surface
+// from a single byte slice interpreted as resolv.conf file content.
+func FuzzResolveConf(f *testing.F) {
+	f.Add([]byte("nameserver 8.8.8.8\nnameserver 8.8.4.4\nsearch cluster.local svc.cluster.local example.com\n"))
+	f.Add([]byte("nameserver 2001:db8::1\nnameserver ::1\n"))
+	f.Add([]byte("search LoCaL\tsvc.cluster.local   example.com\n"))
+	f.Add([]byte("nameserver mynameserver\nnameserver\n"))
+	f.Add([]byte(""))
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		content := string(data)
+
+		if ns, err := ParseNameservers(content); err == nil && ns != nil {
+			_ = ns.IPv4
+			_ = ns.IPv6
+		}
+
+		sd, err := ParseSearchDomains(content)
+		if err != nil || sd == nil {
+			return
+		}
+
+		// Exercise the full domain-helper surface on the parsed search domains.
+		_ = GetServiceDomainList(sd)
+		_ = GetDomainName(sd)
+		_ = GetLongestServiceDomainName(sd)
+
+		// Use the first parsed search domain as the subdomain, so the fuzzer can
+		// steer DomainNameWithSubdomain's prefix/longest-service-domain logic.
+		sub := ""
+		if len(sd) > 0 {
+			sub = sd[0]
+		}
+		_ = DomainNameWithSubdomain(sd, sub)
+	})
+}
