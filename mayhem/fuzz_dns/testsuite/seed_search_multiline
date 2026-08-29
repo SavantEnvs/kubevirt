@@ -1,0 +1,3 @@
+search cluster.local
+search svc.cluster.local example.com
+nameserver 8.8.8.8
