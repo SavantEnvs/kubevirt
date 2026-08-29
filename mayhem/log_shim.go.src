@@ -1,0 +1,29 @@
+// mayhem/log_shim.go.src — a tiny stdlib-only stand-in for
+// github.com/kubevirt/kubevirt's vendored `kubevirt.io/client-go/log`, staged by
+// mayhem/build.sh into the _mayhem_harness/dns mini-module at log/log.go.
+//
+// WHY: pkg/network/dns/resolveconf.go's ONLY non-stdlib import is
+// kubevirt.io/client-go/log, and it uses just two calls — log.Log.Warningf and
+// log.Log.Infof, both purely diagnostic (they do NOT influence the value the
+// parse functions return). The real package pulls in klog + k8s.io/apimachinery,
+// which would drag kubevirt's entire Kubernetes closure into the mini-module and
+// defeat the point of isolating a dependency-light surface. This no-op shim is
+// behaviorally identical for resolveconf.go's use, so both the fuzzed parser and
+// the KAT oracle produce exactly what upstream produces. build.sh's sed only
+// repoints resolveconf.go's ONE import path at this shim (same package name
+// `log`, so every `log.Log.Warningf/Infof` call site is untouched); resolveconf.go
+// itself is copied verbatim.
+package log
+
+type logger struct{}
+
+// Warningf matches the client-go/log signature used in resolveconf.go (no-op:
+// diagnostic only, does not affect parse results).
+func (logger) Warningf(format string, args ...interface{}) {}
+
+// Infof matches the client-go/log signature used in resolveconf.go (no-op).
+func (logger) Infof(format string, args ...interface{}) {}
+
+// Log is the package-level logger handle, referenced as log.Log.<method> exactly
+// as the real kubevirt.io/client-go/log exposes it.
+var Log = logger{}

@@ -1,0 +1,8 @@
+project: savantenvs/kubevirt
+target: fuzz_dns
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/fuzz_dns/testsuite
+cmds:
+  - cmd: /mayhem/fuzz_dns
+    libfuzzer: true
