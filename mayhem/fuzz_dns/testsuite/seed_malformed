@@ -1,0 +1,4 @@
+search example.com
+nameserver mynameserver
+nameserver
+options ndots:5

@@ -1,0 +1,29 @@
+# Build context prune for mayhem/Dockerfile (Docker gives <dockerfile>.dockerignore
+# precedence over a root .dockerignore, so this scopes the pruning to OUR build and
+# leaves upstream's context rules untouched).
+#
+# The image needs the FULL repo, including .git — the grader reads history — so .git
+# is deliberately NOT excluded here. Only local build artifacts and editor/OS cruft
+# are dropped; build.sh produces its outputs under /mayhem at build time.
+
+# ── Go build outputs / local cruft ───────────────────────────────────────────
+_out/
+bin/
+vendor/bin/
+*.test
+*.o
+*.a
+*.so
+
+# ── Container/VM images and tarballs that are never build inputs ─────────────
+*.qcow2
+*.img
+*.tar
+*.tar.gz
+
+# ── Editor / OS cruft ────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
